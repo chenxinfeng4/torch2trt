@@ -537,12 +537,33 @@ class TRTModule(torch.nn.Module):
         self.input_flattener = input_flattener
         self.output_flattener = output_flattener
     
+    def load_from_engine(self, engine_file: str):
+        engine_bytes = open(engine_file, 'rb').read()
+        with trt.Logger() as logger, trt.Runtime(logger) as runtime:
+            self.engine = runtime.deserialize_cuda_engine(engine_bytes)
+            self.context = self.engine.create_execution_context()
+        self.input_names = [n for n in self.engine if self.engine.binding_is_input(n)]
+        self.output_names = [n for n in self.engine if not self.engine.binding_is_input(n)]
+        self.input_flattener = None
+        self.output_flattener = None
+
+    def save_to_engine(self, engine_file: str):
+        engine_bytes = self.engine.serialize()
+        assert self.input_names == [n for n in self.engine if self.engine.binding_is_input(n)]
+        assert self.output_names == [n for n in self.engine if not self.engine.binding_is_input(n)]
+        assert self.input_flattener is None
+        assert self.output_flattener is None
+        with open(engine_file, 'wb') as f:
+            f.write(engine_bytes)
+
     def _on_state_dict(self, state_dict, prefix, local_metadata):
         state_dict[prefix + "engine"] = bytearray(self.engine.serialize())
         state_dict[prefix + "input_names"] = self.input_names
         state_dict[prefix + "output_names"] = self.output_names
-        state_dict[prefix + "input_flattener"] = self.input_flattener.dict()
-        state_dict[prefix + "output_flattener"] = self.output_flattener.dict()
+        if self.input_flattener: 
+               state_dict[prefix + "input_flattener"] = self.input_flattener.dict()
+        if self.output_flattener: 
+               state_dict[prefix + "output_flattener"] = self.output_flattener.dict()
 
     def _load_from_state_dict(
         self,
