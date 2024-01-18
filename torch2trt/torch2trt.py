@@ -540,6 +540,7 @@ class TRTModule(torch.nn.Module):
     def load_from_engine(self, engine_file: str):
         engine_bytes = open(engine_file, 'rb').read()
         with trt.Logger() as logger, trt.Runtime(logger) as runtime:
+            trt.init_libnvinfer_plugins(logger, namespace='')
             self.engine = runtime.deserialize_cuda_engine(engine_bytes)
             self.context = self.engine.create_execution_context()
         self.input_names = [n for n in self.engine if self.engine.binding_is_input(n)]
@@ -551,8 +552,9 @@ class TRTModule(torch.nn.Module):
         engine_bytes = self.engine.serialize()
         assert self.input_names == [n for n in self.engine if self.engine.binding_is_input(n)]
         assert self.output_names == [n for n in self.engine if not self.engine.binding_is_input(n)]
-        assert self.input_flattener is None
-        assert self.output_flattener is None
+        in_f, out_f = self.input_flattener, self.output_flattener
+        assert in_f or (in_f.schema, in_f.size) == ([0], 1)
+        assert out_f or (out_f.schema, out_f.size) == ([0], 1)
         with open(engine_file, 'wb') as f:
             f.write(engine_bytes)
 
